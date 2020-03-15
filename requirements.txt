@@ -1,0 +1,7 @@
+# pyspark==2.4.1
+google-cloud-pubsub
+scikit-multiflow
+cloudpickle
+# pip install drift_detector.detector.--no-binary=protobuf protobuf
+# pip install protobuf
+# python -c "import numpy"
