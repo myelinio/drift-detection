@@ -1,0 +1,79 @@
+# kubectl create serviceaccount spark
+# kubectl create clusterrolebinding spark-role --clusterrole=edit --serviceaccount=myelin-minimal-ns:spark --namespace=myelin-minimal-ns
+# kubectl create secret generic spark-sa --from-file=spark-sa.json
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drift-detection
+  annotations:
+    sidecar.istio.io/inject: "false"
+spec:
+  containers:
+    - image: myelinio/drift-detection:0.0.4
+      imagePullPolicy: Always
+      name: main
+      env:
+        - name: PROJECT_ID
+          value: myelin-development
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /src/drift-detection/secrets/spark-sa.json
+        - name: PUBSUB_SUBSCRIPTION
+          value: "projects/myelin-development/subscriptions/tt-cluster-sha3-logs-subscription"
+        - name: CHECKPOINT_DIRECTORY
+          value: "/tmp/checkpoint"
+        - name: DRIFT_DETECTOR_TYPE
+          value: "ADWIN"
+      command: ["/opt/spark/bin/spark-submit"]
+      args: [
+        "--master", "k8s://https://kubernetes.default.svc.cluster.local:443",
+        "--deploy-mode", "cluster",
+        "--name", "drift-detection",
+        "--conf", "spark.kubernetes.namespace=myelin-minimal-ns",
+        "--conf", "spark.kubernetes.driverEnv.GCS_PROJECT_ID=myelin-development",
+        "--conf", "spark.kubernetes.driverEnv.GOOGLE_APPLICATION_CREDENTIALS=/src/drift-detection/secrets/spark-sa.json",
+        "--conf", "spark.kubernetes.driverEnv.PUBSUB_SUBSCRIPTION=projects/myelin-development/subscriptions/tt-cluster-sha3-logs-subscription",
+        "--conf", "spark.kubernetes.driverEnv.CHECKPOINT_DIRECTORY=/tmp/checkpoint",
+        "--conf", "spark.kubernetes.driverEnv.DRIFT_DETECTOR_TYPE=ADWIN",
+        "--conf", "spark.kubernetes.executorEnv.GCS_PROJECT_ID=myelin-development",
+        "--conf", "spark.kubernetes.executorEnv.GOOGLE_APPLICATION_CREDENTIALS=/src/drift-detection/secrets/spark-sa.json",
+        "--conf", "spark.kubernetes.executorEnv.PUBSUB_SUBSCRIPTION=projects/myelin-development/subscriptions/tt-cluster-sha3-logs-subscription",
+        "--conf", "spark.kubernetes.executorEnv.CHECKPOINT_DIRECTORY=/tmp/checkpoint",
+        "--conf", "spark.kubernetes.executorEnv.DRIFT_DETECTOR_TYPE=ADWIN",
+        "--conf", "spark.driver.cores=0.1",
+        "--conf", "spark.driver.memory=512m",
+        "--conf", "spark.kubernetes.driver.annotation.sidecar.istio.io/inject=false",
+        "--conf", "spark.executor.instances=1",
+        "--conf", "spark.executor.cores=1",
+        "--conf", "spark.executor.memory=512m",
+        "--conf", "spark.kubernetes.executor.annotation.sidecar.istio.io/inject=false",
+        "--conf", "spark.kubernetes.executor.lostCheck.maxAttempts=1",
+        "--conf", "spark.kubernetes.container.image=myelinio/drift-detection:0.0.4",
+        "--conf", "spark.kubernetes.authenticate.driver.serviceAccountName=spark",
+        "--conf", "spark.kubernetes.pyspark.pythonVersion=3",
+        "--conf", "spark.kubernetes.container.image.pullPolicy=Always",
+        "--conf", "spark.kubernetes.executor.secrets.spark-sa=/src/drift-detection/secrets/",
+#        "--conf", "spark.kubernetes.executor.secretKeyRef.GOOGLE_APPLICATION_CREDENTIALS=/src/drift-detection/secrets/spark-sa.json",
+#        "--conf", "spark.kubernetes.executor.volumes.secret.google-cloud-key.mount.path=/src/drift-detection/secrets/spark-sa.json",
+        "/work/pyspark_pubsub_consumer.py",
+      ]
+      volumeMounts:
+        - name: google-cloud-key
+          mountPath: /src/drift-detection/secrets
+#      --master k8s://https://$(minikube ip):8443 \
+#      --deploy-mode cluster \
+#      --name spark-example \
+#      --conf spark.executor.instances=1 \
+#      --conf spark.kubernetes.container.image=myelinio/drift-detection:0.0.4 \
+#      --conf spark.kubernetes.container.image.pullPolicy=IfNotPresent \
+#      --conf spark.kubernetes.authenticate.driver.serviceAccountName=spark \
+#      --conf spark.kubernetes.pyspark.pythonVersion=3 \
+#      /work/pyspark_pubsub_consumer.py
+#
+
+  volumes:
+    - name: google-cloud-key
+      secret:
+        secretName: spark-sa
+  serviceAccount: spark
+  serviceAccountName: spark

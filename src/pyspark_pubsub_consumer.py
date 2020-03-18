@@ -9,6 +9,12 @@ import numpy as np
 
 import pubsub
 import requests
+from skmultiflow.drift_detection import EDDM, PageHinkley, DDM, ADWIN
+
+import os
+import json
+from functools import reduce
+import operator
 
 """
 
@@ -17,6 +23,9 @@ export PROJECT_ID=myelin-development
 export log_filter="resource.type="k8s_container" AND resource.labels.cluster_name="${clusterName}" AND severity>=WARNING AND ("MyelinLoggingFilterOnRequest" OR "MyelinLoggingFilterOnResponse")"
 gcloud pubsub topics create ${clusterName}-logs-topic
 gcloud logging sinks create ${clusterName}-logs-sink pubsub.googleapis.com/projects/${PROJECT_ID}/topics/${clusterName}-logs-topic --log-filter="${log_filter}" --project=${PROJECT_ID}
+
+gcloud pubsub subscriptions create ${clusterName}-logs-subscription --topic=${clusterName}-logs-topic --expiration-period=24h \
+--message-retention-duration=1h --project=${PROJECT_ID}
 
 logging_sa=serviceAccount:p971122396974-626809@gcp-sa-logging.iam.gserviceaccount.com
 gcloud projects add-iam-policy-binding ${PROJECT_ID} \
@@ -31,19 +40,11 @@ gcloud beta pubsub topics add-iam-policy-binding ${clusterName}-logs-topic \
 gcloud iam service-accounts get-iam-policy \
 ${logging_sa}  --format json
 
-gcloud pubsub subscriptions create ${clusterName}-logs-subscription --topic=${clusterName}-logs-topic --expiration-period=24h \
---message-retention-duration=1h --project=${PROJECT_ID}
 
 
 """
-from skmultiflow.drift_detection import EDDM, PageHinkley, DDM, ADWIN
 
-import os
-import json
-from functools import reduce
-import operator
-
-if os.environ["LOCAL"]:
+if "LOCAL" in os.environ:
     os.environ[
         'GOOGLE_APPLICATION_CREDENTIALS'] = "/Users/ryadhkhisb/Dev/workspaces/m/myelin-examples/drift-detection/spark-sa.json"
     os.environ['PROJECT_ID'] = "myelin-development"
@@ -250,19 +251,11 @@ def publish_to_pushgateway(axon_name, task_id, value):
 if __name__ == "__main__":
     spark_config = SparkSession.builder.appName("DriftDetector")
 
-    if os.environ["LOCAL"]:
+    if "LOCAL" in os.environ:
         spark_config = spark_config.config("spark.jars", jar_path) \
             .config("spark.driver.extraClassPath", jar_path) \
             .config("spark.executor.extraClassPath", jar_path)
-        # spark_config = spark_config.config("spark.jars", jar_path) \
-        #     .config("spark.driver.extraClassPath", jar_path) \
-        #     .config("spark.executor.extraClassPath", jar_path) \
     spark = spark_config.getOrCreate()
-
-    # .config("spark.jars", jar_path) \
-    # .config("spark.driver.extraClassPath", jar_path) \
-    # .config("spark.executor.extraClassPath", jar_path) \
-    # .getOrCreate()
 
     spark.sparkContext.setLogLevel("ERROR")
     logger = spark.sparkContext._jvm.org.apache.log4j
@@ -282,5 +275,4 @@ if __name__ == "__main__":
     parsed_logs.map(lambda x: publish_state(x)).pprint()
 
     ssc.start()
-
     ssc.awaitTermination()

@@ -15,13 +15,10 @@ ADD ./job.properties /work
 ENV PYTHONPATH=${PYTHONPATH}:/work
 
 ADD lib/spark_pubsub-1.1-SNAPSHOT.jar ${SPARK_HOME}/jars
+RUN rm ${SPARK_HOME}/jars/kubernetes-client-4.1.2.jar
+ADD https://repo1.maven.org/maven2/io/fabric8/kubernetes-client/4.4.2/kubernetes-client-4.4.2.jar ${SPARK_HOME}/jars
 
-ENV DRIFT_DETECTOR_TYPE ADWIN
-ENV GOOGLE_APPLICATION_CREDENTIALS /tmp/spark-sa.json
-ENV CHECKPOINT_DIRECTORY /tmp/checkpoint
+ENV GOOGLE_APPLICATION_CREDENTIALS /src/drift-detection/secrets/spark-sa.json
 ENV PROJECT_ID myelin-development
-ENV PUBSUB_SUBSCRIPTION projects/myelin-development/subscriptions/test
-
-ADD ./spark-sa.json /tmp/spark-sa.json
 
 WORKDIR /opt/spark/work-dir

@@ -82,10 +82,18 @@ RUN mkdir -p /opt/spark && \
     echo "auth required pam_wheel.so use_uid" >> /etc/pam.d/su && \
     chgrp root /etc/passwd && chmod ug+rw /etc/passwd
 
-COPY ./jars /opt/spark/jars
-COPY ./bin /opt/spark/bin
-COPY ./sbin /opt/spark/sbin
-COPY ./entrypoint.sh /opt/
+RUN wget https://archive.apache.org/dist/spark/spark-2.4.1/spark-2.4.1-bin-hadoop2.7.tgz  -O spark.tgz && \
+tar xvf spark.tgz  -C /tmp/ && \
+rm spark.tgz
+
+RUN ls /tmp/spark-2.4.1-bin-hadoop2.7
+RUN cp -r /tmp/spark-2.4.1-bin-hadoop2.7/jars /opt/spark/jars
+RUN cp -r /tmp/spark-2.4.1-bin-hadoop2.7/bin /opt/spark/bin
+RUN cp -r /tmp/spark-2.4.1-bin-hadoop2.7/sbin /opt/spark/sbin
+RUN cp -r /tmp/spark-2.4.1-bin-hadoop2.7/kubernetes/dockerfiles/spark/entrypoint.sh /opt/
+
+RUN ls /opt/spark/
+
 #COPY examples /opt/spark/examples
 #COPY data /opt/spark/data
 
@@ -119,8 +127,12 @@ RUN pip3 install --upgrade pip setuptools && \
 #    # Removed the .cache to save space
 #    rm -r /root/.cache
 
-COPY ./python/lib ${SPARK_HOME}/python/lib
+RUN cp -r /tmp/spark-2.4.1-bin-hadoop2.7/python/lib ${SPARK_HOME}/python/lib
 ENV PYTHONPATH ${SPARK_HOME}/python/lib/pyspark.zip:${SPARK_HOME}/python/lib/py4j-*.zip
+
+RUN rm -rf /tmp/spark-2.4.1-bin-hadoop2.7
+
+ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/jre/
 
 WORKDIR /opt/spark/work-dir
 ENTRYPOINT [ "/opt/entrypoint.sh" ]

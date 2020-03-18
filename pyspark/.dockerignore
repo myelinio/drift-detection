@@ -1,0 +1,6 @@
+spark-2.3.0-bin-hadoop2.7/*
+spark-2.4.1-bin-hadoop2.7/*
+dependencies/*
+spark-drift-detection.zip
+pyspark/jars
+spark.tgz
