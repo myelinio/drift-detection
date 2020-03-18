@@ -10,7 +10,7 @@ metadata:
     sidecar.istio.io/inject: "false"
 spec:
   containers:
-    - image: myelinio/drift-detection:0.0.8
+    - image: myelinio/drift-detection:0.0.10
       imagePullPolicy: Always
       name: main
       env:
@@ -48,10 +48,11 @@ spec:
         "--conf", "spark.executor.memory=512m",
         "--conf", "spark.kubernetes.executor.annotation.sidecar.istio.io/inject=false",
         "--conf", "spark.kubernetes.executor.lostCheck.maxAttempts=1",
-        "--conf", "spark.kubernetes.container.image=myelinio/drift-detection:0.0.8",
+        "--conf", "spark.kubernetes.container.image=myelinio/drift-detection:0.0.10",
         "--conf", "spark.kubernetes.authenticate.driver.serviceAccountName=myelin-uat-myelin",
         "--conf", "spark.kubernetes.pyspark.pythonVersion=3",
         "--conf", "spark.kubernetes.container.image.pullPolicy=Always",
+        "--conf", "spark.kubernetes.driver.secrets.spark-sa=/src/drift-detection/secrets/",
         "--conf", "spark.kubernetes.executor.secrets.spark-sa=/src/drift-detection/secrets/",
 #        "--conf", "spark.kubernetes.executor.secretKeyRef.GOOGLE_APPLICATION_CREDENTIALS=/src/drift-detection/secrets/spark-sa.json",
 #        "--conf", "spark.kubernetes.executor.volumes.nfs.google-cloud-key.mount.path=/src/drift-detection/secrets/spark-sa.json",
@@ -60,21 +61,40 @@ spec:
       volumeMounts:
         - name: google-cloud-key
           mountPath: /src/drift-detection/secrets
+          readOnly: true
+#
+#      volumeMounts:
+#        - name: kafka-secret
+#          mountPath: "/etc/kafka"
+#          readOnly: true
+
 #      --master k8s://https://$(minikube ip):8443 \
 #      --deploy-mode cluster \
 #      --name spark-example \
 #      --conf spark.executor.instances=1 \
-#      --conf spark.kubernetes.container.image=myelinio/drift-detection:0.0.8 \
+#      --conf spark.kubernetes.container.image=myelinio/drift-detection:0.0.10 \
 #      --conf spark.kubernetes.container.image.pullPolicy=IfNotPresent \
 #      --conf spark.kubernetes.authenticate.driver.serviceAccountName=spark \
 #      --conf spark.kubernetes.pyspark.pythonVersion=3 \
 #      /work/pyspark_pubsub_consumer.py
 #
-
+#  volumes:
+#    - name: kafka-secret
+#      secret:
+#        secretName: kafka-secret
+#        items:
+#          - key: truststore-chain
+#            path: prod-chain-truststore.jks
+#          - key: csh-keystore
+#            path: SVC_PROD_CSH_DATASCIENCE.jks
   volumes:
     - name: google-cloud-key
       secret:
         secretName: spark-sa
+        items:
+          - key: spark-sa.json
+            path: spark-sa.json
+
 #  volumeClaimTemplate:
 #    metadata:
 #      name: axon-store

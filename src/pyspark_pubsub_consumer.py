@@ -15,6 +15,7 @@ import os
 import json
 from functools import reduce
 import operator
+from google.cloud import pubsub_v1
 
 """
 
@@ -29,7 +30,7 @@ gcloud pubsub topics delete ${clusterName}-logs-topic
 gcloud pubsub topics create ${clusterName}-logs-topic
 gcloud logging sinks create ${clusterName}-logs-sink pubsub.googleapis.com/projects/${PROJECT_ID}/topics/${clusterName}-logs-topic --log-filter="${log_filter}" --project=${PROJECT_ID}
 
-gcloud pubsub subscriptions create ${clusterName}-logs-subscription --topic=${clusterName}-logs-topic --expiration-period=24h \
+gcloud pubsub subscriptions create ${clusterName}-logs-subscription1 --topic=${clusterName}-logs-topic --expiration-period=24h \
 --message-retention-duration=1h --project=${PROJECT_ID}
 
 logging_sa=serviceAccount:p971122396974-824468@gcp-sa-logging.iam.gserviceaccount.com
@@ -256,12 +257,13 @@ def publish_to_pushgateway(axon_name, task_id, value):
     return axon_name, task_id, value, res.text, res.status_code
 
 
+debug_topic = "projects/myelin-development/topics/tt-cluster-sha3-logs-topic-debug"
+
 def write_debug(rdd):
+    publisher = pubsub_v1.publisher.client.Client()
     data = rdd.collect()
-    f = open("/tmp/data", "w+")
-    for l in data:
-        f.write("Got %s \n" % str(l))
-    f.close()
+    for line in data:
+        publisher.publish(debug_topic, bytes(str(line), "utf-8"))
 
 
 if __name__ == "__main__":
@@ -292,7 +294,9 @@ if __name__ == "__main__":
     parsed_logs = stream
 
     parsed_logs.foreachRDD(write_debug)
-    parsed_logs.pprint()
+    # parsed_logs = stream.flatMap(parse_request).window(window_duration).updateStateByKey(update_state)
+
+    # parsed_logs.pprint()
 
     ssc.start()
     ssc.awaitTermination()
