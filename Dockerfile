@@ -9,8 +9,8 @@ RUN pip install -r  requirements.txt
 
 ADD ./src/pyspark_pubsub_consumer.py /work
 ADD ./src/pubsub.py /work
-ADD ./log4j.properties /work
-ADD ./job.properties /work
+#ADD ./log4j.properties /work
+#ADD ./job.properties /work
 
 ENV PYTHONPATH=${PYTHONPATH}:/work
 

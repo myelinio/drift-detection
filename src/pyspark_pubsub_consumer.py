@@ -18,28 +18,35 @@ import operator
 
 """
 
-export clusterName=tt-cluster-sha3
+export clusterName=tt-cluster-sha2020
 export PROJECT_ID=myelin-development
 export log_filter="resource.type="k8s_container" AND resource.labels.cluster_name="${clusterName}" AND severity>=WARNING AND ("MyelinLoggingFilterOnRequest" OR "MyelinLoggingFilterOnResponse")"
+
+gcloud logging sinks delete ${clusterName}-logs-sink
+gcloud pubsub subscriptions delete ${clusterName}-logs-subscription
+gcloud pubsub topics delete ${clusterName}-logs-topic
+
 gcloud pubsub topics create ${clusterName}-logs-topic
 gcloud logging sinks create ${clusterName}-logs-sink pubsub.googleapis.com/projects/${PROJECT_ID}/topics/${clusterName}-logs-topic --log-filter="${log_filter}" --project=${PROJECT_ID}
 
 gcloud pubsub subscriptions create ${clusterName}-logs-subscription --topic=${clusterName}-logs-topic --expiration-period=24h \
 --message-retention-duration=1h --project=${PROJECT_ID}
 
-logging_sa=serviceAccount:p971122396974-626809@gcp-sa-logging.iam.gserviceaccount.com
-gcloud projects add-iam-policy-binding ${PROJECT_ID} \
-  --member ${logging_sa} \
-  --role roles/editor
-
+logging_sa=serviceAccount:p971122396974-824468@gcp-sa-logging.iam.gserviceaccount.com
 
 gcloud beta pubsub topics add-iam-policy-binding ${clusterName}-logs-topic \
 --member ${logging_sa} \
 --role roles/pubsub.publisher
 
+kubectl create secret generic spark-sa --from-file=spark-sa.json
+
+### review
 gcloud iam service-accounts get-iam-policy \
 ${logging_sa}  --format json
 
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member ${logging_sa} \
+  --role roles/editor
 
 
 """
@@ -49,7 +56,7 @@ if "LOCAL" in os.environ:
         'GOOGLE_APPLICATION_CREDENTIALS'] = "/Users/ryadhkhisb/Dev/workspaces/m/myelin-examples/drift-detection/spark-sa.json"
     os.environ['PROJECT_ID'] = "myelin-development"
     os.environ['DRIFT_DETECTOR_TYPE'] = "ADWIN"
-    os.environ['PUBSUB_SUBSCRIPTION'] = "projects/myelin-development/subscriptions/tt-cluster-sha3-logs-subscription"
+    os.environ['PUBSUB_SUBSCRIPTION'] = "projects/myelin-development/subscriptions/tt-cluster-sha1-logs-subscription"
     os.environ['CHECKPOINT_DIRECTORY'] = "/tmp/checkpoint"
     os.environ['MYELIN_NAMESPACE'] = "myelin-app"
     os.environ['PUSHGATEWAY_URL'] = "myelin-uat-prometheus-pushgateway"
@@ -77,6 +84,7 @@ def filter_predict_requests(l_tuple):
         if '"/predict"' in request_splits[1]:
             return True
     return False
+
 
 #
 # def parse_request_file(line):
@@ -248,6 +256,14 @@ def publish_to_pushgateway(axon_name, task_id, value):
     return axon_name, task_id, value, res.text, res.status_code
 
 
+def write_debug(rdd):
+    data = rdd.collect()
+    f = open("/tmp/data", "w+")
+    for l in data:
+        f.write("Got %s \n" % str(l))
+    f.close()
+
+
 if __name__ == "__main__":
     spark_config = SparkSession.builder.appName("DriftDetector")
 
@@ -257,10 +273,10 @@ if __name__ == "__main__":
             .config("spark.executor.extraClassPath", jar_path)
     spark = spark_config.getOrCreate()
 
-    spark.sparkContext.setLogLevel("ERROR")
-    logger = spark.sparkContext._jvm.org.apache.log4j
-    logger.LogManager.getLogger("org").setLevel(logger.Level.ERROR)
-    logger.LogManager.getLogger("akka").setLevel(logger.Level.ERROR)
+    # spark.sparkContext.setLogLevel("ERROR")
+    # logger = spark.sparkContext._jvm.org.apache.log4j
+    # logger.LogManager.getLogger("org").setLevel(logger.Level.ERROR)
+    # logger.LogManager.getLogger("akka").setLevel(logger.Level.ERROR)
 
     ssc = StreamingContext(spark.sparkContext, batchDuration)
     ssc.checkpoint(checkpointDirectory)
@@ -269,10 +285,14 @@ if __name__ == "__main__":
     # stream = ssc.textFileStream(log_file)
     # parsed_logs = stream.filter(filter_predict_requests).flatMap(parse_request).groupBy(sf.window("date", "10 seconds", "10 seconds", str(startSecond) + " seconds")).agg(sf.sum("val").alias("sum"))
 
-    parsed_logs = stream.flatMap(parse_request).window(window_duration).updateStateByKey(update_state)
+    # parsed_logs = stream.flatMap(parse_request).window(window_duration).updateStateByKey(update_state)
     # parsed_logs = stream.flatMap(parse_request)
-    # parsed_logs = stream
-    parsed_logs.map(lambda x: publish_state(x)).pprint()
+    # parsed_logs.map(lambda x: publish_state(x)).pprint()
+
+    parsed_logs = stream
+
+    parsed_logs.foreachRDD(write_debug)
+    parsed_logs.pprint()
 
     ssc.start()
     ssc.awaitTermination()
