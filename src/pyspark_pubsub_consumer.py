@@ -1,3 +1,4 @@
+import logging
 import pickle
 from typing import List
 
@@ -16,10 +17,13 @@ import json
 from functools import reduce
 import operator
 from google.cloud import pubsub_v1
+from google.cloud import bigquery
+import time
 
 """
 
-export clusterName=tt-cluster-sha2020
+
+export clusterName=tt-cluster-sha123
 export PROJECT_ID=myelin-development
 export log_filter="resource.type="k8s_container" AND resource.labels.cluster_name="${clusterName}" AND severity>=WARNING AND ("MyelinLoggingFilterOnRequest" OR "MyelinLoggingFilterOnResponse")"
 
@@ -28,18 +32,36 @@ gcloud pubsub subscriptions delete ${clusterName}-logs-subscription
 gcloud pubsub topics delete ${clusterName}-logs-topic
 
 gcloud pubsub topics create ${clusterName}-logs-topic
-gcloud logging sinks create ${clusterName}-logs-sink pubsub.googleapis.com/projects/${PROJECT_ID}/topics/${clusterName}-logs-topic --log-filter="${log_filter}" --project=${PROJECT_ID}
-
-gcloud pubsub subscriptions create ${clusterName}-logs-subscription1 --topic=${clusterName}-logs-topic --expiration-period=24h \
+gcloud pubsub subscriptions create ${clusterName}-logs-subscription --topic=${clusterName}-logs-topic --expiration-period=24h \
 --message-retention-duration=1h --project=${PROJECT_ID}
 
-logging_sa=serviceAccount:p971122396974-824468@gcp-sa-logging.iam.gserviceaccount.com
+gcloud logging sinks create ${clusterName}-logs-sink pubsub.googleapis.com/projects/${PROJECT_ID}/topics/${clusterName}-logs-topic --log-filter="${log_filter}" --project=${PROJECT_ID}
+
+
+logging_sa=$(gcloud logging sinks  describe ${clusterName}-logs-sink  --project=${PROJECT_ID} | awk 'BEGIN {FS="writerIdentity: " } ; { print $2 }')
+ 
 
 gcloud beta pubsub topics add-iam-policy-binding ${clusterName}-logs-topic \
 --member ${logging_sa} \
 --role roles/pubsub.publisher
 
 kubectl create secret generic spark-sa --from-file=spark-sa.json
+
+
+dataset_name=${PROJECT_ID}:$(echo ${clusterName} | sed s/-/_/g)_drift_detection
+bq --location=europe-west2 mk \
+--dataset \
+--default_table_expiration 36000 \
+${dataset_name}
+
+
+bq mk \
+-t \
+--expiration 3600 \
+--label organization:development \
+${dataset_name}.state \
+model_id:STRING,axon:STRING,drift_probability:FLOAT,timestamp:TIMESTAMP
+
 
 ### review
 gcloud iam service-accounts get-iam-policy \
@@ -57,17 +79,27 @@ if "LOCAL" in os.environ:
         'GOOGLE_APPLICATION_CREDENTIALS'] = "/Users/ryadhkhisb/Dev/workspaces/m/myelin-examples/drift-detection/spark-sa.json"
     os.environ['PROJECT_ID'] = "myelin-development"
     os.environ['DRIFT_DETECTOR_TYPE'] = "ADWIN"
-    os.environ['PUBSUB_SUBSCRIPTION'] = "projects/myelin-development/subscriptions/tt-cluster-sha1-logs-subscription"
+    os.environ['PUBSUB_SUBSCRIPTION'] = "projects/myelin-development/subscriptions/tt-cluster-sha123-logs-subscription"
     os.environ['CHECKPOINT_DIRECTORY'] = "/tmp/checkpoint"
     os.environ['MYELIN_NAMESPACE'] = "myelin-app"
     os.environ['PUSHGATEWAY_URL'] = "myelin-uat-prometheus-pushgateway"
     os.environ['PUSHGATEWAY_PORT'] = "9091"
+    os.environ['BATCH_DURATION'] = "5"
+    os.environ['WINDOW_DURATION'] = "5"
+    os.environ['BATCH_SIZE'] = "100"
+    os.environ['STATE_TOPIC'] = "projects/myelin-development/topics/tt-cluster-sha123-state-topic"
+    os.environ['STATE_TABLE'] = "myelin-development.tt_cluster_sha123_drift_detection.state"
+    os.environ['DEBUG_TOPIC'] = "projects/myelin-development/topics/tt-cluster-sha123-logs-topic-debug"
     jar_path = "/Users/ryadhkhisb/Dev/workspaces/m/myelin-examples/drift-detection/lib/spark_pubsub-1.1-SNAPSHOT.jar"
 
 project_id = os.environ.get("PROJECT_ID")
-batchDuration = 5
-window_duration = 5
-batch_size = 2
+batch_duration = int(os.environ.get("BATCH_DURATION"))
+window_duration = int(os.environ.get("WINDOW_DURATION"))
+batch_size = int(os.environ.get("BATCH_SIZE"))
+debug_topic = os.environ.get("DEBUG_TOPIC")
+state_topic = os.environ.get("STATE_TOPIC")
+state_table = os.environ.get("STATE_TABLE")
+
 subscription_name = os.environ.get("PUBSUB_SUBSCRIPTION")
 checkpointDirectory = os.environ.get("CHECKPOINT_DIRECTORY")
 drift_detector_type = os.environ.get("DRIFT_DETECTOR_TYPE")
@@ -102,10 +134,19 @@ def filter_predict_requests(l_tuple):
 
 
 def parse_request(l_tuple):
+    # raise Exception("parse_request")
     lines = []
     if l_tuple is None:
         return []
     for line in l_tuple:
+        # lines.append(("invalid",
+        #               {"model": "invalid",
+        #                "model_id": "invalid",
+        #                "axon": "invalid",
+        #                "timestamp": 0,
+        #                "data": line,
+        #                "parsed_body": line
+        #                }))
         p = json.loads(line)
         request_splits = p["textPayload"].split("MyelinLoggingFilterOnRequest:", 1)
         # lines.append(("model", (0, "ndarray", line)))
@@ -118,9 +159,11 @@ def parse_request(l_tuple):
             if parsed_body[":path"] == "/predict" and parsed_body["ISTIO_METAJSON_LABELS"]["app"].endswith("-proxy"):
                 model_id = parsed_body["ISTIO_METAJSON_LABELS"]["deployers.myelinproj.io/deployer"]
                 model = parsed_body["ISTIO_METAJSON_LABELS"]["stable-app"]
+                axon = parsed_body["ISTIO_METAJSON_LABELS"]["axon"]
                 lines.append((model_id,
                               {"model": model,
                                "model_id": model_id,
+                               "axon": axon,
                                "timestamp": p['timestamp'],
                                "data": parsed_body["requestBody"]["data"]["ndarray"],
                                "parsed_body": parsed_body
@@ -172,6 +215,8 @@ def build_drift_detector(drift_detector_type: str, dim) -> MultiflowDetector:
 
 
 def update_state(new_values, state):
+    if len(new_values) == 0:
+        return state
     drift_detector = None
     if state:
         drift_detector = pickle.loads(state[0])
@@ -188,11 +233,9 @@ def update_state(new_values, state):
     print("&&&&&&&& all data: %s" % all_data)
     ######
 
-    model_id = ""
-    model = ""
-    if len(new_values) > 0:
-        model_id = new_values[0]["model_id"]
-        model = new_values[0]["model"]
+    model_id = new_values[0]["model_id"]
+    model = new_values[0]["model"]
+    axon = new_values[0]["axon"]
 
     for value in new_values:
         data = value["data"]
@@ -214,19 +257,21 @@ def update_state(new_values, state):
         print("********** drift_detector %s:" % [
             [d.get_params(deep=True) for d in drift_detector.detectors]
         ])
-    drift_proba = 0
+    drift_probability = 0
     if warning_detected:
-        drift_proba = 0.8
+        drift_probability = 0.8
     if change_detected:
-        drift_proba = 0.9
+        drift_probability = 0.9
 
     return (cloudpickle.dumps(drift_detector),
             {"model": model,
              "model_id": model_id,
+             "axon": axon,
              "warning_detected": warning_detected,
              "change_detected": change_detected,
-             "drift_proba": drift_proba}
+             "drift_probability": drift_probability}
             )
+
 
 
 def get_data_dim(batch):
@@ -244,7 +289,7 @@ def get_metric(axon_name, metric_name):
 
 def publish_state(state):
     print(state)
-    return publish_to_pushgateway(state[1][1]["model"], state[0], state[1][1]["drift_proba"])
+    return publish_to_pushgateway(state[1][1]["model"], state[0], state[1][1]["drift_probability"])
 
 
 def publish_to_pushgateway(axon_name, task_id, value):
@@ -257,13 +302,62 @@ def publish_to_pushgateway(axon_name, task_id, value):
     return axon_name, task_id, value, res.text, res.status_code
 
 
-debug_topic = "projects/myelin-development/topics/tt-cluster-sha3-logs-topic-debug"
+def write_debug_rdd(rdd):
+    if rdd is not None:
+        try:
+            data = rdd.collect()
+            if len(data) > 0:
+                publisher = pubsub_v1.publisher.client.Client()
+                for tup in data:
+                    publisher.publish(state_topic, bytes("state: " + str(tup), "utf-8"))
+                publisher.stop()
+        except Exception as e:
+            publisher = pubsub_v1.publisher.client.Client()
+            publisher.publish(state_topic, bytes("state error: " + str(e), "utf-8"))
+            publisher.stop()
 
-def write_debug(rdd):
+
+def write_to_bq(rdd):
+    if rdd is not None:
+        data = rdd.collect()
+        if len(data) > 0:
+            client = bigquery.Client()
+            table = client.get_table(state_table)
+            rows_to_insert = []
+            for tup in data:
+                x = tup[1][1]
+                rows_to_insert.append((x['model_id'], x['axon'], x['drift_probability'], time.time()))
+
+            errors = client.insert_rows(table, rows_to_insert)  # Make an API request.
+            if errors == []:
+                print("New rows have been added.")
+
+
+
+
+def write_debug(tup):
     publisher = pubsub_v1.publisher.client.Client()
-    data = rdd.collect()
-    for line in data:
-        publisher.publish(debug_topic, bytes(str(line), "utf-8"))
+    publisher.publish(debug_topic, bytes("write line: " + str(tup), "utf-8"))
+    publisher.stop()
+    # raise Exception("After Processing rdd")
+
+
+def write_state(tup):
+    raise Exception("write_state")
+    # publisher = pubsub_v1.publisher.client.Client()
+    # publisher.publish(state_topic, bytes("write state: " + str(tup), "utf-8"))
+    # publisher.stop()
+
+
+# def sendRecord(tup):
+#     word   = tup[0]
+#     amount = tup[1]
+#
+#     connection     = MongoClient()
+#     test_db        = connection.get_database('test')
+#     wordcount_coll = test_db.get_collection('wordcount_coll')
+#     wordcount_coll.update({"_id": word}, {"$inc": {"count": amount} }, upsert=True)
+#     connection.close()
 
 
 if __name__ == "__main__":
@@ -275,12 +369,28 @@ if __name__ == "__main__":
             .config("spark.executor.extraClassPath", jar_path)
     spark = spark_config.getOrCreate()
 
-    # spark.sparkContext.setLogLevel("ERROR")
-    # logger = spark.sparkContext._jvm.org.apache.log4j
-    # logger.LogManager.getLogger("org").setLevel(logger.Level.ERROR)
-    # logger.LogManager.getLogger("akka").setLevel(logger.Level.ERROR)
+    # logger = logging.getLogger('py4j')
+    # logger.info("My test info statement")
+    # logger.removeHandler(logger.handlers[0])
+    #
+    # import sys  # Put at top if not already there
+    #
+    # sh = logging.StreamHandler(sys.stdout)
+    # sh.setLevel(logging.DEBUG)
+    # logger.addHandler(sh)
 
-    ssc = StreamingContext(spark.sparkContext, batchDuration)
+    # spark.sparkContext.setLogLevel("ERROR")
+    # spark_logger = spark.sparkContext._jvm.org.apache.log4j
+    # spark_logger.LogManager.getLogger("org").setLevel(spark_logger.Level.ERROR)
+    # spark_logger.LogManager.getLogger("akka").setLevel(spark_logger.Level.ERROR)
+    #
+    # logger = spark_logger.LogManager.getLogger(__name__)
+    # logger.setLevel(spark_logger.Level.ERROR)
+    # logger.error("pyspark script logger initialized")
+
+    # logger.removeHandler(logger.handlers[0])
+
+    ssc = StreamingContext(spark.sparkContext, batch_duration)
     ssc.checkpoint(checkpointDirectory)
 
     stream = pubsub.PubsubUtils.createStream(ssc, subscription_name, batch_size, True)
@@ -288,13 +398,13 @@ if __name__ == "__main__":
     # parsed_logs = stream.filter(filter_predict_requests).flatMap(parse_request).groupBy(sf.window("date", "10 seconds", "10 seconds", str(startSecond) + " seconds")).agg(sf.sum("val").alias("sum"))
 
     # parsed_logs = stream.flatMap(parse_request).window(window_duration).updateStateByKey(update_state)
+
     # parsed_logs = stream.flatMap(parse_request)
     # parsed_logs.map(lambda x: publish_state(x)).pprint()
 
-    parsed_logs = stream
-
-    parsed_logs.foreachRDD(write_debug)
-    # parsed_logs = stream.flatMap(parse_request).window(window_duration).updateStateByKey(update_state)
+    parsed_logs = stream.flatMap(parse_request).window(window_duration)
+    # stream.flatMap(parse_request).foreachRDD(write_debug_rdd)
+    parsed_logs.updateStateByKey(update_state).foreachRDD(write_to_bq)
 
     # parsed_logs.pprint()
 
