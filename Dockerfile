@@ -1,28 +1,44 @@
-FROM myelinio/pyspark:spark-2.4.1
+FROM myelinio/pyspark:spark-2.4.1-alpine
+
+ENV NUMPY_VERSION=1.18.2 \
+    SCIPY_VERSION=1.4.1
 
 WORKDIR /work
 
-RUN pip install --upgrade pip
+# reference: https://github.com/abn/scipy-docker-alpine/blob/master/Dockerfile
+RUN pip install --upgrade pip setuptools wheel
+RUN apk --update add --virtual scipy-runtime \
+    && apk add --virtual scipy-build \
+        build-base python3-dev openblas-dev freetype-dev pkgconfig gfortran \
+    && ln -s /usr/include/locale.h /usr/include/xlocale.h \
+    && pip install --no-cache-dir "numpy==$NUMPY_VERSION" \
+    && pip install --no-cache-dir "scipy==1.3.0" \
+    && apk add --virtual scipy-runtime \
+        freetype libgfortran libgcc libpng  libstdc++ musl openblas tcl tk \
+    && rm -rf /var/cache/apk/*
 
-COPY requirements.txt requirements.txt
-RUN pip install -r  requirements.txt
+
+# https://github.com/AfsmNGhr/alpine-tensorflow/blob/master/Dockerfile
+RUN apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing \
+            libjpeg-turbo hdf5 && \
+    apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing \
+            --virtual build-deps cmake linux-headers \
+            bash wget file openblas-dev freetype-dev libjpeg-turbo-dev \
+            libpng-dev hdf5-dev zip patch && \
+    pip install --no-cache-dir h5py
+
+RUN pip install Cython
+RUN pip install scikit-learn>=0.20
+RUN pip install pandas>=0.21.0
 
 
 ENV PYTHONPATH=${PYTHONPATH}:/work
 
-ADD lib/spark_pubsub-1.1-SNAPSHOT.jar ${SPARK_HOME}/jars
+ADD lib/spark_pubsub-1.2-SNAPSHOT.jar ${SPARK_HOME}/jars
 RUN rm ${SPARK_HOME}/jars/kubernetes-client-4.1.2.jar
 ADD lib/kubernetes-client-4.4.2.jar ${SPARK_HOME}/jars
 
 
-ENV GOOGLE_APPLICATION_CREDENTIALS /src/drift-detection/secrets/spark-sa.json
-ENV PROJECT_ID myelin-development
-
-ADD ./src/pyspark_pubsub_consumer.py /work
-ADD ./src/pubsub.py /work
-#ADD ./log4j.properties /work
-#ADD ./job.properties /work
-
-ADD ./log4j.properties ${SPARK_HOME}/conf/log4j.properties
+ADD ./entrypoint.sh /opt/entrypoint.sh
 
 WORKDIR /opt/spark/work-dir

@@ -23,17 +23,13 @@ from pyspark.serializers import PairDeserializer, NoOpSerializer, UTF8Deserializ
 from pyspark.streaming import DStream
 
 
-
-
 class PubsubUtils:
-
 
     def utf8_decoder(s):
         """ Decode the unicode as UTF-8 """
         if s is None:
             return None
         return s.decode('utf-8')
-
 
     @staticmethod
     def _toPythonDStream(ssc, jstream, bodyDecoder):
