@@ -10,7 +10,7 @@ metadata:
     sidecar.istio.io/inject: "false"
 spec:
   containers:
-    - image: myelinio/drift-detection:0.0.100
+    - image: myelinio/drift-detection:0.0.104
       imagePullPolicy: Always
       name: main
       env:
@@ -32,7 +32,7 @@ spec:
         "--conf", "spark.kubernetes.namespace=myelin-app",
         "--conf", "spark.kubernetes.authenticate.driver.serviceAccountName=myelin-uat-myelin",
 
-        "--conf", "spark.kubernetes.container.image=myelinio/drift-detection:0.0.100",
+        "--conf", "spark.kubernetes.container.image=myelinio/drift-detection:0.0.104",
         "--conf", "spark.kubernetes.container.image.pullPolicy=Always",
 
         "--conf", "spark.kubernetes.driverEnv.GCS_PROJECT_ID=myelin-development",
@@ -47,6 +47,9 @@ spec:
         "--conf", "spark.kubernetes.driverEnv.DEBUG_TOPIC=projects/myelin-development/topics/tt-cluster-sha456-logs-topic-debug",
         "--conf", "spark.kubernetes.driverEnv.STATE_TOPIC=projects/myelin-development/topics/tt-cluster-sha456-state-topic",
         "--conf", "spark.kubernetes.driverEnv.STATE_TABLE=myelin-development.tt_cluster_sha456_drift_detection.state",
+        "--conf", "spark.kubernetes.driverEnv.PUSHGATEWAY_URL=myelin-uat-prometheus-pushgateway",
+        "--conf", "spark.kubernetes.driverEnv.PUSHGATEWAY_PORT=9091",
+        "--conf", "spark.kubernetes.driverEnv.MYELIN_NAMESPACE=myelin-app",
 
         "--conf", "spark.kubernetes.driver.annotation.sidecar.istio.io/inject=false",
         "--conf", "spark.kubernetes.driver.secrets.spark-sa=/src/drift-detection/secrets/",
@@ -78,8 +81,7 @@ spec:
 
         #        "--conf", "spark.kubernetes.executor.secretKeyRef.GOOGLE_APPLICATION_CREDENTIALS=/src/drift-detection/secrets/spark-sa.json",
 #        "--conf", "spark.kubernetes.executor.volumes.nfs.google-cloud-key.mount.path=/src/drift-detection/secrets/spark-sa.json",
-        "/work/pyspark_pubsub_consumer.py",
-#        "/work/pyspark_pubsub_consumer_bahir.py",
+        "/work/drift_detection_job.py",
       ]
       volumeMounts:
         - name: google-cloud-key
@@ -99,7 +101,7 @@ spec:
 #      --deploy-mode cluster \
 #      --name spark-example \
 #      --conf spark.executor.instances=1 \
-#      --conf spark.kubernetes.container.image=myelinio/drift-detection:0.0.100 \
+#      --conf spark.kubernetes.container.image=myelinio/drift-detection:0.0.104 \
 #      --conf spark.kubernetes.container.image.pullPolicy=IfNotPresent \
 #      --conf spark.kubernetes.authenticate.driver.serviceAccountName=spark \
 #      --conf spark.kubernetes.pyspark.pythonVersion=3 \

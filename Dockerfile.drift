@@ -1,4 +1,4 @@
-FROM myelinio/pyspark:spark-2.4.1
+FROM myelinio/pyspark:spark-2.4.1-ml
 
 COPY requirements.txt requirements.txt
 RUN pip install -r  requirements.txt
@@ -9,9 +9,9 @@ ENV PROJECT_ID myelin-development
 
 ADD lib/gcs-connector-hadoop2-1.9.9-shaded.jar ${SPARK_HOME}/jars
 
-ADD src/drift_detection_job.py /work
-ADD ./src/pubsub.py /work
-ADD ./src/skmultiflow_detector.py /work
-ADD ./src/utils.py /work
+ADD ./src/drift_detection_job.py /work/drift_detection_job.py
+ADD ./src/pubsub.py /work/pubsub.py
+ADD ./src/skmultiflow_detector.py /work/skmultiflow_detector.py
+ADD ./src/utils.py /work/utils.py
 
 ADD ./entrypoint.sh /opt/entrypoint.sh
