@@ -139,7 +139,7 @@ else
     mkdir -p /opt/spark/work-dir/conf
 fi
 
-echo "log4j.rootCategory=INFO, console" > /opt/spark/work-dir/conf/log4j.properties
+echo "log4j.rootCategory=WARN, console" > /opt/spark/work-dir/conf/log4j.properties
 echo "log4j.appender.console=org.apache.log4j.ConsoleAppender" >> /opt/spark/work-dir/conf/log4j.properties
 echo "log4j.appender.console.target=System.err" >> /opt/spark/work-dir/conf/log4j.properties
 echo "log4j.appender.console.layout=org.apache.log4j.PatternLayout" >> /opt/spark/work-dir/conf/log4j.properties

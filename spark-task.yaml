@@ -10,7 +10,7 @@ metadata:
     sidecar.istio.io/inject: "false"
 spec:
   containers:
-    - image: myelinio/drift-detection:0.0.104
+    - image: myelinio/drift-detection:0.0.105
       imagePullPolicy: Always
       name: main
       env:
@@ -24,6 +24,8 @@ spec:
           value: "/var/spark/checkpoints_pubsub"
         - name: DRIFT_DETECTOR_TYPE
           value: "ADWIN"
+        - name: DRIFT_PROBABILITY_METRIC
+          value: "drift-probability"
       command: ["/opt/spark/bin/spark-submit"]
       args: [
         "--master", "k8s://https://kubernetes.default.svc.cluster.local:443",
@@ -32,7 +34,7 @@ spec:
         "--conf", "spark.kubernetes.namespace=myelin-app",
         "--conf", "spark.kubernetes.authenticate.driver.serviceAccountName=myelin-uat-myelin",
 
-        "--conf", "spark.kubernetes.container.image=myelinio/drift-detection:0.0.104",
+        "--conf", "spark.kubernetes.container.image=myelinio/drift-detection:0.0.105",
         "--conf", "spark.kubernetes.container.image.pullPolicy=Always",
 
         "--conf", "spark.kubernetes.driverEnv.GCS_PROJECT_ID=myelin-development",
@@ -50,6 +52,7 @@ spec:
         "--conf", "spark.kubernetes.driverEnv.PUSHGATEWAY_URL=myelin-uat-prometheus-pushgateway",
         "--conf", "spark.kubernetes.driverEnv.PUSHGATEWAY_PORT=9091",
         "--conf", "spark.kubernetes.driverEnv.MYELIN_NAMESPACE=myelin-app",
+        "--conf", "spark.kubernetes.driverEnv.INPUT_DRIFT_PROBABILITY_METRIC=input_drift_probability",
 
         "--conf", "spark.kubernetes.driver.annotation.sidecar.istio.io/inject=false",
         "--conf", "spark.kubernetes.driver.secrets.spark-sa=/src/drift-detection/secrets/",
@@ -101,7 +104,7 @@ spec:
 #      --deploy-mode cluster \
 #      --name spark-example \
 #      --conf spark.executor.instances=1 \
-#      --conf spark.kubernetes.container.image=myelinio/drift-detection:0.0.104 \
+#      --conf spark.kubernetes.container.image=myelinio/drift-detection:0.0.105 \
 #      --conf spark.kubernetes.container.image.pullPolicy=IfNotPresent \
 #      --conf spark.kubernetes.authenticate.driver.serviceAccountName=spark \
 #      --conf spark.kubernetes.pyspark.pythonVersion=3 \

@@ -94,8 +94,9 @@ def get_metric(axon_name, metric_name):
     return metric.replace("-", "__")
 
 
-def publish_state_metric(state, pushgateway_url, myelin_ns, port):
-    publish_to_pushgateway(state[1][1]["axon"], state[0], state[1][1]["drift_probability"], pushgateway_url, myelin_ns, port)
+def publish_state_metric(state, pushgateway_url, myelin_ns, port, drift_probability_metric):
+    publish_to_pushgateway(state[1][1]["axon"], state[0], state[1][1]["drift_probability"],
+                           pushgateway_url, myelin_ns, port, drift_probability_metric)
     return state
 
 
@@ -154,13 +155,15 @@ def update_state(new_values, state, drift_detector_type):
             )
 
 
-def publish_to_pushgateway(axon_name, task_id, value, pushgateway_url, myelin_ns, port):
+def publish_to_pushgateway(axon_name, task_id, value, pushgateway_url, myelin_ns, port, drift_probability_metric):
+    logger = logging.getLogger()
     publish_url = "http://{}.{}.svc.cluster.local:{}/metrics/job/{}/pod/".format(pushgateway_url, myelin_ns, port,
                                                                                  task_id)
-    internal_metric = get_metric(axon_name, "drift-probability")
+    internal_metric = get_metric(axon_name, drift_probability_metric)
     payload = "{} {}\n".format(internal_metric, value)
     res = requests.post(url=publish_url, data=payload,
                         headers={'Content-Type': 'application/x-www-form-urlencoded'})
+    logger.warning("********** submitted to pushgateway url %s, got response status: %s" % (publish_url, res.status_code))
 
 
 def create_context(spark, checkpoint_directory, batch_duration):

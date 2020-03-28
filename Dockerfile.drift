@@ -1,4 +1,4 @@
-FROM myelinio/pyspark:spark-2.4.1-ml
+FROM myelinio/pyspark:spark-2.4.1-ml-ubuntu
 
 COPY requirements.txt requirements.txt
 RUN pip install -r  requirements.txt

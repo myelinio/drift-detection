@@ -1,22 +1,13 @@
 import logging
+import os
 import shutil
-import pickle
-import time
 
 from pyspark.sql import SparkSession
 from pyspark.streaming import StreamingContext
 
 import pubsub
-
-import os
-
-from skmultiflow_detector import build_drift_detector
-from utils import get_metric, get_data_dim, parse_request, create_context, update_state, publish_state_metric, \
+from utils import parse_request, create_context, update_state, publish_state_metric, \
     write_state_to_bq
-import numpy as np
-import cloudpickle
-import requests
-from google.cloud import bigquery
 
 """
 
@@ -111,6 +102,7 @@ if __name__ == "__main__":
         os.environ['STATE_TOPIC'] = "projects/myelin-development/topics/tt-cluster-sha456-state-topic"
         os.environ['STATE_TABLE'] = "myelin-development.tt_cluster_sha456_drift_detection.state"
         os.environ['DEBUG_TOPIC'] = "projects/myelin-development/topics/tt-cluster-sha456-logs-topic-debug"
+        os.environ['INPUT_DRIFT_PROBABILITY_METRIC'] = "input_drift_probability"
         jar_path = "/Users/ryadhkhisb/Dev/workspaces/m/myelin-examples/drift-detection/lib/spark_pubsub-1.1-SNAPSHOT.jar"
         # jar_path = "/Users/ryadhkhisb/Dev/workspaces/m/myelin-examples/drift-detection/lib/spark_pubsub-1.1-SNAPSHOT.jar," \
         #            "/Users/ryadhkhisb/Dev/workspaces/m/drift-detection/lib/gcs-connector-hadoop2-1.9.9-shaded.jar"
@@ -121,8 +113,6 @@ if __name__ == "__main__":
     batch_duration = int(os.environ.get("BATCH_DURATION"))
     window_duration = int(os.environ.get("WINDOW_DURATION"))
     batch_size = int(os.environ.get("BATCH_SIZE"))
-    debug_topic = os.environ.get("DEBUG_TOPIC")
-    state_topic = os.environ.get("STATE_TOPIC")
     state_table = os.environ.get("STATE_TABLE")
 
     subscription_name = os.environ.get("PUBSUB_SUBSCRIPTION")
@@ -132,6 +122,7 @@ if __name__ == "__main__":
     pushgateway_url = os.environ.get("PUSHGATEWAY_URL")
     port = os.environ.get("PUSHGATEWAY_PORT")
     myelin_ns = os.environ.get("MYELIN_NAMESPACE")
+    INPUT_DRIFT_PROBABILITY_METRIC = os.environ.get("INPUT_DRIFT_PROBABILITY_METRIC")
 
     main_logger = logging.getLogger()
     main_logger.warning("subscription name: {}".format(subscription_name))
@@ -168,7 +159,7 @@ if __name__ == "__main__":
 
     stream.flatMap(parse_request) \
         .updateStateByKey(lambda new_values, state: update_state(new_values, state, drift_detector_type)) \
-        .map(lambda state: publish_state_metric(state, pushgateway_url, myelin_ns, port)) \
+        .map(lambda state: publish_state_metric(state, pushgateway_url, myelin_ns, port, INPUT_DRIFT_PROBABILITY_METRIC)) \
         .foreachRDD(lambda rdd: write_state_to_bq(rdd, state_table))
 
     context.start()

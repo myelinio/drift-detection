@@ -20,10 +20,10 @@ mv /tmp/spark-task.yaml spark-task.yaml
 
 
 kubectl -n myelin-app  delete --force -f spark-task.yaml || true
-sleep 5
+sleep 2
 
 kubectl -n myelin-app delete po -l spark-role=driver || true
-sleep 5
+sleep 2
 
 kubectl -n myelin-app  replace --force -f spark-task.yaml
 # kubectl -n myelin-app  delete --force -f spark-task.yaml
