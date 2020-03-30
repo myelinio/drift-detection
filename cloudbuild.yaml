@@ -17,7 +17,7 @@ steps:
         echo `date '+%Y%m%d%H%M%S'` > TEMP_VERSION
         TEMP_VERSION=$(cat TEMP_VERSION)
         make build-docker DOCKER_PUSH=true IMAGE_TAG=v$${TEMP_VERSION} IMAGE_NAMESPACE=myelinio
-    waitFor: ['secrets', 'build']
+    waitFor: ['secrets']
     id: 'docker'
 
 options:
