@@ -1,0 +1,26 @@
+steps:
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args: ['kms', 'decrypt', '--ciphertext-file=ci/secrets/dockerhub-secrets.sh.enc',
+           '--plaintext-file=ci/secrets/dockerhub-secrets.sh', '--location=global',
+           '--keyring=myelin-keyring', '--key=myelin-key']
+    id: 'secrets'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -e
+        source ci/secrets/dockerhub-secrets.sh
+        docker login --username=$$DOCKERHUB_USERID --password=$$DOCKERHUB_PASSWORD
+        echo `date '+%Y%m%d%H%M%S'` > TEMP_VERSION
+        TEMP_VERSION=$(cat TEMP_VERSION)
+        make build-docker DOCKER_PUSH=true IMAGE_TAG=v$${TEMP_VERSION} IMAGE_NAMESPACE=myelinio
+    waitFor: ['secrets', 'build']
+    id: 'docker'
+
+options:
+  machineType: 'N1_HIGHCPU_8'
+
+timeout: 1800s
