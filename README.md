@@ -1,15 +1,75 @@
 
 ```shell script
-SUBSCRIPTION=projects/myelin-development/subscriptions/tt-cluster-sha3-logs-subscription
-PROJECT=myelin-development
-TOPIC=tt-cluster-sha3-logs-topic
-gcloud pubsub topics get-iam-policy \
-    projects/${PROJECT}/topics/${TOPIC} \
-    --format json
 
-gcloud pubsub subscriptions set-iam-policy \
-  projects/${PROJECT}/subscriptions/${SUBSCRIPTION} \
-  subscription_policy.json
+
+export clusterName=tt-cluster-sha456
+export PROJECT_ID=myelin-development
+
+# Cleanup
+gcloud logging sinks delete ${clusterName}-logs-sink
+gcloud pubsub subscriptions delete ${clusterName}-logs-subscription
+gcloud pubsub topics delete ${clusterName}-logs-topic
+
+
+export log_filter="resource.type="k8s_container" AND resource.labels.cluster_name="${clusterName}" AND severity>=WARNING AND ("MyelinLoggingFilterOnRequest" OR "MyelinLoggingFilterOnResponse")"
+
+
+gcloud pubsub topics create ${clusterName}-logs-topic
+gcloud pubsub subscriptions create ${clusterName}-logs-subscription --topic=${clusterName}-logs-topic --expiration-period=24h \
+--message-retention-duration=1h --project=${PROJECT_ID}
+
+gcloud logging sinks create ${clusterName}-logs-sink pubsub.googleapis.com/projects/${PROJECT_ID}/topics/${clusterName}-logs-topic --log-filter="${log_filter}" --project=${PROJECT_ID}
+
+
+logging_sa=$(gcloud logging sinks  describe ${clusterName}-logs-sink  --project=${PROJECT_ID} | awk 'BEGIN {FS="writerIdentity: " } ; { print $2 }')
+echo ${logging_sa}
+
+gcloud beta pubsub topics add-iam-policy-binding ${clusterName}-logs-topic \
+--member ${logging_sa} \
+--role roles/pubsub.publisher
+
+
+
+
+kubectl create secret generic spark-sa --from-file=spark-sa.json
+
+
+dataset_name=${PROJECT_ID}:$(echo ${clusterName} | sed s/-/_/g)_drift_detection
+bq --location=europe-west2 mk \
+--dataset \
+--default_table_expiration 36000 \
+${dataset_name}
+
+
+bq mk \
+-t \
+--expiration 360000 \
+--label organization:development \
+${dataset_name}.state \
+model_id:STRING,axon:STRING,drift_probability:FLOAT,timestamp:TIMESTAMP
+
+
+### review
+gcloud iam service-accounts get-iam-policy \
+${logging_sa}  --format json
+
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member ${logging_sa} \
+  --role roles/editor
+
+
+select * from `tt_cluster_sha456_drift_detection.state` order by timestamp desc
+
+-- delete from `tt_cluster_sha456_drift_detection.state` where axon="ml-test-hp"
+-- AND `timestamp` < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 10 MINUTE)
+
+-- select count(*) from `tt_cluster_sha456_drift_detection.state`
+
+logging_sa_s3=$(gcloud logging sinks  describe ${clusterName}-logs-sink-s3  --project=${PROJECT_ID} | awk 'BEGIN {FS="writerIdentity: " } ; { print $2 }')
+echo ${logging_sa_s3}
+
+gsutil iam ch ${logging_sa_s3}:objectAdmin gs://${clusterName}-logs-sink
+
 ```
 
 
