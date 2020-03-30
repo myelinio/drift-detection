@@ -122,10 +122,12 @@ if __name__ == "__main__":
     pushgateway_url = os.environ.get("PUSHGATEWAY_URL")
     port = os.environ.get("PUSHGATEWAY_PORT")
     myelin_ns = os.environ.get("MYELIN_NAMESPACE")
-    INPUT_DRIFT_PROBABILITY_METRIC = os.environ.get("INPUT_DRIFT_PROBABILITY_METRIC")
+    input_drift_probability_metric = os.environ.get("INPUT_DRIFT_PROBABILITY_METRIC")
 
     main_logger = logging.getLogger()
     main_logger.warning("subscription name: {}".format(subscription_name))
+    main_logger.warning("state table: {}".format(state_table))
+    main_logger.warning("input_drift_probability_metric: {}".format(input_drift_probability_metric))
     main_logger.warning("batch size: {}".format(batch_size))
     main_logger.warning("window duration: {}".format(window_duration))
     main_logger.warning("batch duration: {}".format(batch_duration))
@@ -159,7 +161,7 @@ if __name__ == "__main__":
 
     stream.flatMap(parse_request) \
         .updateStateByKey(lambda new_values, state: update_state(new_values, state, drift_detector_type)) \
-        .map(lambda state: publish_state_metric(state, pushgateway_url, myelin_ns, port, INPUT_DRIFT_PROBABILITY_METRIC)) \
+        .map(lambda state: publish_state_metric(state, pushgateway_url, myelin_ns, port, input_drift_probability_metric)) \
         .foreachRDD(lambda rdd: write_state_to_bq(rdd, state_table))
 
     context.start()
