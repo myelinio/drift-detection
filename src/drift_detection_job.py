@@ -11,14 +11,16 @@ from utils import parse_request, create_context, update_state, publish_state_met
 
 
 if __name__ == "__main__":
+    moa_jar_path = os.path.join(os.environ.get("SPARK_HOME", ""), "jars/meander-detectors-1.0-SNAPSHOT-jar-with-dependencies.jar")
+    py4j_jar_path = os.path.join(os.environ.get("SPARK_HOME", ""), "jars/py4j-0.10.7.jar")
 
     if "LOCAL" in os.environ:
         os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = \
             "/Users/ryadhkhisb/Dev/workspaces/m/myelin-examples/drift-detection/spark-sa.json"
         os.environ['PROJECT_ID'] = "myelin-development"
-        os.environ['DRIFT_DETECTOR_TYPE'] = "ADWIN"
+        os.environ['DRIFT_DETECTOR_TYPE'] = "MOA_KL"
         os.environ['PUBSUB_SUBSCRIPTION'] =\
-            "projects/myelin-development/subscriptions/tt-cluster-sha456-logs-subscription"
+            "projects/myelin-development/subscriptions/test1-sha456-logs-subscription"
         os.environ['CHECKPOINT_DIRECTORY'] = "/tmp/checkpoint"
         os.environ['MYELIN_NAMESPACE'] = "myelin-app"
         os.environ['PUSHGATEWAY_URL'] = "myelin-uat-prometheus-pushgateway"
@@ -26,13 +28,16 @@ if __name__ == "__main__":
         os.environ['BATCH_DURATION'] = "5"
         os.environ['WINDOW_DURATION'] = "5"
         os.environ['BATCH_SIZE'] = "100"
-        os.environ['STATE_TOPIC'] = "projects/myelin-development/topics/tt-cluster-sha456-state-topic"
-        os.environ['STATE_TABLE'] = "myelin-development.tt_cluster_sha456_drift_detection.state"
-        os.environ['DEBUG_TOPIC'] = "projects/myelin-development/topics/tt-cluster-sha456-logs-topic-debug"
+        os.environ['STATE_TOPIC'] = "projects/myelin-development/topics/test1-sha456-state-topic"
+        os.environ['STATE_TABLE'] = "myelin-development.test1_sha456_drift_detection.state"
+        os.environ['DEBUG_TOPIC'] = "projects/myelin-development/topics/test1-sha456-logs-topic-debug"
         os.environ['INPUT_DRIFT_PROBABILITY_METRIC'] = "input_drift_probability"
-        jar_path = "/Users/ryadhkhisb/Dev/workspaces/m/myelin-examples/drift-detection/lib/spark_pubsub-1.1-SNAPSHOT.jar"
-        # jar_path = "/Users/ryadhkhisb/Dev/workspaces/m/myelin-examples/drift-detection/lib/spark_pubsub-1.1-SNAPSHOT.jar," \
-        #            "/Users/ryadhkhisb/Dev/workspaces/m/drift-detection/lib/gcs-connector-hadoop2-1.9.9-shaded.jar"
+        jar_path = "/Users/ryadhkhisb/Dev/workspaces/m/myelin-examples/drift-detection/lib/spark_pubsub-1.1-SNAPSHOT.jar," \
+                   "/Users/ryadhkhisb/Dev/workspaces/m/drift-detection/lib/meander-detectors-1.0-SNAPSHOT-jar-with-dependencies.jar"
+        moa_jar_path = "/Users/ryadhkhisb/Dev/workspaces/m/drift-detection/lib/meander-detectors-1.0-SNAPSHOT-jar-with-dependencies.jar"
+        os.environ['MOA_JAR_PATH'] = "/Users/ryadhkhisb/Dev/workspaces/m/drift-detection/lib/meander-detectors-1.0-SNAPSHOT-jar-with-dependencies.jar"
+        os.environ['PY4J_JAR_PATH'] = "/Users/ryadhkhisb/Dev/workspaces/m/drift-detection/pyspark/spark-2.4.1-bin-hadoop2.7/jars/py4j-0.10.7.jar"
+
 
     shutil.rmtree(os.environ['CHECKPOINT_DIRECTORY'], True)
 
@@ -66,7 +71,11 @@ if __name__ == "__main__":
             .config("spark.driver.extraClassPath", jar_path) \
             .config("spark.executor.extraClassPath", jar_path)
     spark = spark_config.getOrCreate()
-
+    job_conf = {
+        'moa_jar_path': moa_jar_path,
+        'drift_detector_type': drift_detector_type,
+        'py4j_jar_path': py4j_jar_path,
+    }
     # In Memory
     # context = StreamingContext(spark.sparkContext, batch_duration)
     # lines = [[1, 2, 3], [4, 5, 6]]
@@ -74,7 +83,7 @@ if __name__ == "__main__":
 
     # Google storage
     # context = StreamingContext.getOrCreate(checkpointDirectory, create_context)
-    # stream = context.textFileStream("gs://tt-cluster-sha456-logs-sink/data/")
+    # stream = context.textFileStream("gs://test1-sha456-logs-sink/data/")
     # spark._jsc.hadoopConfiguration().set('fs.gs.impl', 'com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem')
     # spark._jsc.hadoopConfiguration().set('fs.AbstractFileSystem.gs.impl',
     #                                      'com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS')
@@ -87,7 +96,7 @@ if __name__ == "__main__":
     stream = pubsub.PubsubUtils.createStream(context, subscription_name, batch_size, True)
 
     stream.flatMap(parse_request) \
-        .updateStateByKey(lambda new_values, state: update_state(new_values, state, drift_detector_type)) \
+        .updateStateByKey(lambda new_values, state: update_state(new_values, state, job_conf)) \
         .map(lambda state: publish_state_metric(state, pushgateway_url, myelin_ns, port, input_drift_probability_metric)) \
         .foreachRDD(lambda rdd: write_state_to_bq(rdd, state_table))
 

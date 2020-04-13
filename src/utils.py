@@ -1,25 +1,19 @@
 import json
-import operator
-from functools import reduce
-
-
 import logging
-import shutil
+import operator
 import pickle
 import time
+from functools import reduce
 
-from pyspark.sql import SparkSession
-from pyspark.streaming import StreamingContext
-
-import pubsub
-
-import os
-
-from skmultiflow_detector import build_drift_detector
 import numpy as np
-import cloudpickle
 import requests
 from google.cloud import bigquery
+from py4j.java_gateway import JavaGateway
+from pyspark.streaming import StreamingContext
+
+from moa_detector import MoaDetector
+from skmultiflow_detector import MultiflowDetector
+import os
 
 
 def parse_request_file(line):
@@ -36,28 +30,36 @@ def parse_request_file(line):
 
 
 def parse_request(l_tuple):
+    logger = logging.getLogger()
     lines = []
     if l_tuple is None:
         return []
     for line in l_tuple:
-        p = json.loads(line)
-        request_splits = p["textPayload"].split("MyelinLoggingFilterOnRequest:", 1)
-        if len(request_splits) == 2:
-
-            body = request_splits[1].replace('\\"', '\"')
-            parsed_body = json.loads(body)
-            if parsed_body[":path"] == "/predict" and parsed_body["ISTIO_METAJSON_LABELS"]["app"].endswith("-proxy"):
-                model_id = parsed_body["ISTIO_METAJSON_LABELS"]["deployers.myelinproj.io/deployer"]
-                model = parsed_body["ISTIO_METAJSON_LABELS"]["stable-app"]
-                axon = parsed_body["ISTIO_METAJSON_LABELS"]["axon"]
-                lines.append((model_id,
-                              {"model": model,
-                               "model_id": model_id,
-                               "axon": axon,
-                               "timestamp": p['timestamp'],
-                               "data": parsed_body["requestBody"]["data"]["ndarray"],
-                               "parsed_body": parsed_body
-                               }))
+        try:
+            p = json.loads(line)
+            request_splits = p["textPayload"].split("MyelinLoggingFilterOnRequest:", 1)
+            # logger.warning("line: %s" % line)
+            if len(request_splits) == 2:
+                body = request_splits[1].replace('\\"', '\"')
+                # logger.warning("body: %s" % body)
+                parsed_body = json.loads(body)
+                if parsed_body[":path"] == "/predict" and parsed_body["ISTIO_METAJSON_LABELS"]["app"].endswith(
+                        "-proxy"):
+                    model_id = parsed_body["ISTIO_METAJSON_LABELS"]["deployers.myelinproj.io/deployer"]
+                    model = parsed_body["ISTIO_METAJSON_LABELS"]["stable-app"]
+                    axon = parsed_body["ISTIO_METAJSON_LABELS"]["axon"]
+                    lines.append((model_id,
+                                  {"model": model,
+                                   "model_id": model_id,
+                                   "axon": axon,
+                                   "timestamp": p['timestamp'],
+                                   "data": parsed_body["requestBody"]["data"]["ndarray"],
+                                   "parsed_body": parsed_body
+                                   }))
+                else:
+                    logger.error("failed parsing line, missing: %s" % line)
+        except:
+            logger.error("failed parsing line: %s" % line)
     return lines
 
 
@@ -80,7 +82,6 @@ def filter_predict_requests(l_tuple):
     return False
 
 
-
 def get_data_dim(batch):
     if len(batch[0].shape) == 1:
         data_dim = batch[0].shape[0]
@@ -100,8 +101,14 @@ def publish_state_metric(state, pushgateway_url, myelin_ns, port, drift_probabil
     return state
 
 
-def update_state(new_values, state, drift_detector_type):
+def update_state(new_values, state, job_conf):
     logger = logging.getLogger()
+    from py4j.java_gateway import JavaGateway
+    ####### DEBUG
+    logger.warning(">>> all data: %s" % new_values)
+    ######
+
+    gg = JavaGateway.launch_gateway(jarpath=job_conf['py4j_jar_path'], classpath=job_conf['moa_jar_path'])
     if len(new_values) == 0:
         return state
     drift_detector = None
@@ -110,10 +117,6 @@ def update_state(new_values, state, drift_detector_type):
         warning_detected, change_detected = state[1]["warning_detected"], state[1]["change_detected"]
     else:
         warning_detected, change_detected = False, False
-
-    ####### DEBUG
-    logger.warning(">>> all data: %s" % new_values)
-    ######
 
     model_id = new_values[0]["model_id"]
     model = new_values[0]["model"]
@@ -127,7 +130,7 @@ def update_state(new_values, state, drift_detector_type):
         data_dim = get_data_dim(batch)
 
         if not drift_detector:
-            drift_detector = build_drift_detector(drift_detector_type, data_dim)
+            drift_detector = build_drift_detector(job_conf, data_dim, gg)
         drift_detector.fit(data)
         if drift_detector.detected_warning_zone():
             logger.warning('Warning zone has been detected in data: ' + str(value))
@@ -136,16 +139,13 @@ def update_state(new_values, state, drift_detector_type):
             logger.warning('Change has been detected in data: ' + str(value))
             change_detected = True
         logger.warning("********** drift_detector data %s:" % data)
-        logger.warning("********** drift_detector %s:" % [
-            [d.get_params(deep=True) for d in drift_detector.detectors]
-        ])
 
     drift_probability = 0
     if warning_detected:
         drift_probability = 0.8
     if change_detected:
         drift_probability = 0.9
-    return (cloudpickle.dumps(drift_detector),
+    return (pickle.dumps(drift_detector),
             {"model": model,
              "model_id": model_id,
              "axon": axon,
@@ -163,7 +163,8 @@ def publish_to_pushgateway(axon_name, task_id, value, pushgateway_url, myelin_ns
     payload = "{} {}\n".format(internal_metric, value)
     res = requests.post(url=publish_url, data=payload,
                         headers={'Content-Type': 'application/x-www-form-urlencoded'})
-    logger.warning("********** submitted to pushgateway url %s, got response status: %s" % (publish_url, res.status_code))
+    logger.warning(
+        "********** submitted to pushgateway url %s, got response status: %s" % (publish_url, res.status_code))
 
 
 def create_context(spark, checkpoint_directory, batch_duration):
@@ -188,6 +189,17 @@ def write_state_to_bq(rdd, state_table):
             errors = client.insert_rows(table, rows_to_insert)  # Make an API request.
             if errors == []:
                 logger.error("New rows have been added.")
+
+
+def build_drift_detector(job_conf: dict, dim: int, gg: JavaGateway):
+    drift_detector_type = job_conf['drift_detector_type']
+    if drift_detector_type.startswith('MOA_'):
+        detector = MoaDetector(drift_detector_type, dim, gg)
+    elif drift_detector_type.startswith('SKMULTIFLOW_'):
+        detector = MultiflowDetector(drift_detector_type, dim)
+    else:
+        raise Exception("Drift detector %s not implemented" % drift_detector_type)
+    return detector
 
 
 if __name__ == "__main__":

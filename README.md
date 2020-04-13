@@ -71,7 +71,7 @@ logging_sa_s3=$(gcloud logging sinks  describe ${clusterName}-logs-sink-s3  --pr
 echo ${logging_sa_s3}
 
 gsutil iam ch ${logging_sa_s3}:objectAdmin gs://${clusterName}-logs-sink
-
+k port-forward deploy/myelin-uat-prometheus-pushgateway  9091
 ```
 
 

@@ -30,9 +30,6 @@ class MultiflowDetector:
             proba = 0.9
         return proba
 
-def build_drift_detector(drift_detector_type: str, dim) -> MultiflowDetector:
-    return MultiflowDetector(drift_detector_type, dim)
-
 
 def skmultiflow_detector(drift_detector_type: str) -> BaseDriftDetector:
     if drift_detector_type == "EDDM":

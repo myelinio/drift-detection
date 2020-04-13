@@ -8,10 +8,12 @@ ENV GOOGLE_APPLICATION_CREDENTIALS /src/drift-detection/secrets/spark-sa.json
 ENV PROJECT_ID myelin-development
 
 ADD lib/gcs-connector-hadoop2-1.9.9-shaded.jar ${SPARK_HOME}/jars
+ADD lib/meander-detectors-1.0-SNAPSHOT-jar-with-dependencies.jar ${SPARK_HOME}/jars
 
 ADD ./src/drift_detection_job.py /work/drift_detection_job.py
 ADD ./src/pubsub.py /work/pubsub.py
 ADD ./src/skmultiflow_detector.py /work/skmultiflow_detector.py
 ADD ./src/utils.py /work/utils.py
+ADD ./src/moa_detector.py /work/moa_detector.py
 
 ADD ./entrypoint.sh /opt/entrypoint.sh

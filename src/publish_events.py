@@ -11,7 +11,8 @@ for i in range(999, 1500):
     data_stream[i] = 99
 
 # Port forward a model proxy:
-#  while True; do kubectl -n myelin-minimal-ns port-forward ml-test-hp-deployer-2013794992-proxy-7d479669c4-j2xt8  8080:8000; done
+#  while True; do kubectl port-forward ml-test1-deployer-2990861116-proxy-689cd6dd59-7w9kk  8080:8000; done
+#  while True; do kubectl port-forward deploy/ml-test1-deployer-2865361340-proxy  8080:8000; done
 url = "http://localhost:8080/predict"
 for i in range(DATA_SIZE):
     x = int(data_stream[i])

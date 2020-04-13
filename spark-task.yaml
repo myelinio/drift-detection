@@ -10,7 +10,7 @@ metadata:
     sidecar.istio.io/inject: "false"
 spec:
   containers:
-    - image: myelinio/drift-detection:0.0.105
+    - image: myelinio/drift-detection:0.0.110
       imagePullPolicy: Always
       name: main
       env:
@@ -19,11 +19,11 @@ spec:
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: /src/drift-detection/secrets/spark-sa.json
         - name: PUBSUB_SUBSCRIPTION
-          value: "projects/myelin-development/subscriptions/tt-cluster-sha456-logs-subscription"
+          value: "projects/myelin-development/subscriptions/test1-sha456-logs-subscription"
         - name: CHECKPOINT_DIRECTORY
           value: "/var/spark/checkpoints_pubsub"
         - name: DRIFT_DETECTOR_TYPE
-          value: "ADWIN"
+          value: "MOA_KL"
         - name: DRIFT_PROBABILITY_METRIC
           value: "drift-probability"
       command: ["/opt/spark/bin/spark-submit"]
@@ -34,25 +34,25 @@ spec:
         "--conf", "spark.kubernetes.namespace=myelin-app",
         "--conf", "spark.kubernetes.authenticate.driver.serviceAccountName=myelin-uat-myelin",
 
-        "--conf", "spark.kubernetes.container.image=myelinio/drift-detection:0.0.105",
+        "--conf", "spark.kubernetes.container.image=myelinio/drift-detection:0.0.110",
         "--conf", "spark.kubernetes.container.image.pullPolicy=Always",
 
         "--conf", "spark.kubernetes.driverEnv.GCS_PROJECT_ID=myelin-development",
         "--conf", "spark.kubernetes.driverEnv.GOOGLE_APPLICATION_CREDENTIALS=/src/drift-detection/secrets/spark-sa.json",
-#        "--conf", "spark.kubernetes.driverEnv.PUBSUB_SUBSCRIPTION=tt-cluster-sha456-logs-subscription",
-        "--conf", "spark.kubernetes.driverEnv.PUBSUB_SUBSCRIPTION=projects/myelin-development/subscriptions/tt-cluster-sha456-logs-subscription",
+#        "--conf", "spark.kubernetes.driverEnv.PUBSUB_SUBSCRIPTION=test1-sha456-logs-subscription",
+        "--conf", "spark.kubernetes.driverEnv.PUBSUB_SUBSCRIPTION=projects/myelin-development/subscriptions/test1-sha456-logs-subscription",
         "--conf", "spark.kubernetes.driverEnv.CHECKPOINT_DIRECTORY=/var/spark/checkpoints_pubsub",
-        "--conf", "spark.kubernetes.driverEnv.DRIFT_DETECTOR_TYPE=ADWIN",
+        "--conf", "spark.kubernetes.driverEnv.DRIFT_DETECTOR_TYPE=MOA_KL",
         "--conf", "spark.kubernetes.driverEnv.BATCH_DURATION=5",
         "--conf", "spark.kubernetes.driverEnv.WINDOW_DURATION=5",
         "--conf", "spark.kubernetes.driverEnv.BATCH_SIZE=5",
-        "--conf", "spark.kubernetes.driverEnv.DEBUG_TOPIC=projects/myelin-development/topics/tt-cluster-sha456-logs-topic-debug",
-        "--conf", "spark.kubernetes.driverEnv.STATE_TOPIC=projects/myelin-development/topics/tt-cluster-sha456-state-topic",
-        "--conf", "spark.kubernetes.driverEnv.STATE_TABLE=myelin-development.tt_cluster_sha456_drift_detection.state",
+        "--conf", "spark.kubernetes.driverEnv.DEBUG_TOPIC=projects/myelin-development/topics/test1-sha456-logs-topic-debug",
+        "--conf", "spark.kubernetes.driverEnv.STATE_TOPIC=projects/myelin-development/topics/test1-sha456-state-topic",
+        "--conf", "spark.kubernetes.driverEnv.STATE_TABLE=myelin-development.test1_sha456_drift_detection.state",
         "--conf", "spark.kubernetes.driverEnv.PUSHGATEWAY_URL=myelin-uat-prometheus-pushgateway",
         "--conf", "spark.kubernetes.driverEnv.PUSHGATEWAY_PORT=9091",
         "--conf", "spark.kubernetes.driverEnv.MYELIN_NAMESPACE=myelin-app",
-        "--conf", "spark.kubernetes.driverEnv.INPUT_DRIFT_PROBABILITY_METRIC=input_drift_probability",
+        "--conf", "spark.kubernetes.driverEnv.INPUT_DRIFT_PROBABILITY_METRIC=input_drift_probability1",
 
         "--conf", "spark.kubernetes.driver.annotation.sidecar.istio.io/inject=false",
         "--conf", "spark.kubernetes.driver.secrets.spark-sa=/src/drift-detection/secrets/",
@@ -69,7 +69,7 @@ spec:
 
         "--conf", "spark.executor.instances=1",
         "--conf", "spark.executor.cores=2",
-        "--conf", "spark.executor.memory=1024m",
+        "--conf", "spark.executor.memory=2048m",
         "--conf", "spark.kubernetes.executor.secrets.spark-sa=/src/drift-detection/secrets/",
         "--conf", "spark.kubernetes.executor.volumes.persistentVolumeClaim.data-myelin-uat-nfs-server-0.options.claimName=data-myelin-uat-nfs-server-0",
         "--conf", "spark.kubernetes.executor.volumes.persistentVolumeClaim.data-myelin-uat-nfs-server-0.mount.path=/var/spark/",
@@ -78,9 +78,9 @@ spec:
 
 #        "--conf", "spark.kubernetes.executorEnv.GCS_PROJECT_ID=myelin-development",
 #        "--conf", "spark.kubernetes.executorEnv.GOOGLE_APPLICATION_CREDENTIALS=/src/drift-detection/secrets/spark-sa.json",
-#        "--conf", "spark.kubernetes.executorEnv.PUBSUB_SUBSCRIPTION=projects/myelin-development/subscriptions/tt-cluster-sha456-logs-subscription",
+#        "--conf", "spark.kubernetes.executorEnv.PUBSUB_SUBSCRIPTION=projects/myelin-development/subscriptions/test1-sha456-logs-subscription",
 #        "--conf", "spark.kubernetes.executorEnv.CHECKPOINT_DIRECTORY=/var/spark/checkpoints_pubsub",
-#        "--conf", "spark.kubernetes.executorEnv.DRIFT_DETECTOR_TYPE=ADWIN",
+#        "--conf", "spark.kubernetes.executorEnv.DRIFT_DETECTOR_TYPE=MOA_KL",
 
         #        "--conf", "spark.kubernetes.executor.secretKeyRef.GOOGLE_APPLICATION_CREDENTIALS=/src/drift-detection/secrets/spark-sa.json",
 #        "--conf", "spark.kubernetes.executor.volumes.nfs.google-cloud-key.mount.path=/src/drift-detection/secrets/spark-sa.json",
@@ -104,7 +104,7 @@ spec:
 #      --deploy-mode cluster \
 #      --name spark-example \
 #      --conf spark.executor.instances=1 \
-#      --conf spark.kubernetes.container.image=myelinio/drift-detection:0.0.105 \
+#      --conf spark.kubernetes.container.image=myelinio/drift-detection:0.0.110 \
 #      --conf spark.kubernetes.container.image.pullPolicy=IfNotPresent \
 #      --conf spark.kubernetes.authenticate.driver.serviceAccountName=spark \
 #      --conf spark.kubernetes.pyspark.pythonVersion=3 \
