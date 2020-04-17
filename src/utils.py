@@ -13,7 +13,6 @@ from pyspark.streaming import StreamingContext
 
 from moa_detector import MoaDetector
 from skmultiflow_detector import MultiflowDetector
-import os
 
 
 def parse_request_file(line):
@@ -35,19 +34,23 @@ def parse_request(l_tuple):
     if l_tuple is None:
         return []
     for line in l_tuple:
+        insert_id = ""
         try:
             p = json.loads(line)
+            insert_id = p["insertId"]
             request_splits = p["textPayload"].split("MyelinLoggingFilterOnRequest:", 1)
             # logger.warning("line: %s" % line)
             if len(request_splits) == 2:
                 body = request_splits[1].replace('\\"', '\"')
                 # logger.warning("body: %s" % body)
                 parsed_body = json.loads(body)
-                if parsed_body[":path"] == "/predict" and parsed_body["ISTIO_METAJSON_LABELS"]["app"].endswith(
-                        "-proxy"):
-                    model_id = parsed_body["ISTIO_METAJSON_LABELS"]["deployers.myelinproj.io/deployer"]
-                    model = parsed_body["ISTIO_METAJSON_LABELS"]["stable-app"]
-                    axon = parsed_body["ISTIO_METAJSON_LABELS"]["axon"]
+                istio_labels = parsed_body["ISTIO_METAJSON_LABELS"]
+                is_proxy = istio_labels["app"].endswith("-proxy")
+                is_predict = parsed_body[":path"] == "/predict"
+                if is_predict and is_proxy:
+                    model_id = istio_labels["deployers.myelinproj.io/deployer"]
+                    model = istio_labels["stable-app"]
+                    axon = istio_labels["axon"]
                     lines.append((model_id,
                                   {"model": model,
                                    "model_id": model_id,
@@ -57,9 +60,13 @@ def parse_request(l_tuple):
                                    "parsed_body": parsed_body
                                    }))
                 else:
-                    logger.error("failed parsing line, missing: %s" % line)
-        except:
-            logger.error("failed parsing line: %s" % line)
+                    logger.error(
+                        "failed parsing line, insertId: %s, evaluated: (%s, %s) " % (insert_id, is_predict, is_proxy))
+        except Exception as e:
+            message = str(e)
+            if hasattr(e, 'message'):
+                print(e.message)
+            logger.error("failed parsing line, insertId:%s, error: %s" % (insert_id, message))
     return lines
 
 
@@ -101,19 +108,18 @@ def publish_state_metric(state, pushgateway_url, myelin_ns, port, drift_probabil
     return state
 
 
-def update_state(new_values, state, job_conf):
+def update_state(new_values, state, job_conf, dump=True):
     logger = logging.getLogger()
     from py4j.java_gateway import JavaGateway
     ####### DEBUG
-    logger.warning(">>> all data: %s" % new_values)
+    # logger.warning(">>> all data: %s" % new_values)
     ######
-
-    gg = JavaGateway.launch_gateway(jarpath=job_conf['py4j_jar_path'], classpath=job_conf['moa_jar_path'])
     if len(new_values) == 0:
         return state
     drift_detector = None
-    if state:
-        drift_detector = pickle.loads(state[0])
+    first_phase = state is None
+    if not first_phase:
+        drift_detector = pickle.loads(state[0]) if dump else state[0]
         warning_detected, change_detected = state[1]["warning_detected"], state[1]["change_detected"]
     else:
         warning_detected, change_detected = False, False
@@ -130,28 +136,33 @@ def update_state(new_values, state, job_conf):
         data_dim = get_data_dim(batch)
 
         if not drift_detector:
-            drift_detector = build_drift_detector(job_conf, data_dim, gg)
+            drift_detector = build_drift_detector(job_conf, data_dim)
         drift_detector.fit(data)
         if drift_detector.detected_warning_zone():
-            logger.warning('Warning zone has been detected in data: ' + str(value))
+            # logger.warning('Warning zone has been detected in data: ' + str(value))
             warning_detected = True
         if drift_detector.detected_change():
-            logger.warning('Change has been detected in data: ' + str(value))
+            # logger.warning('Change has been detected in data: ' + str(value))
             change_detected = True
-        logger.warning("********** drift_detector data %s:" % data)
+        # logger.warning("********** drift_detector data %s:" % data)
 
-    drift_probability = 0
-    if warning_detected:
-        drift_probability = 0.8
-    if change_detected:
-        drift_probability = 0.9
-    return (pickle.dumps(drift_detector),
+    if first_phase:
+        drift_probability = 0
+        warning_detected, change_detected = False, False
+    else:
+        drift_probability = 0
+        if warning_detected:
+            drift_probability = 0.8
+        if change_detected:
+            drift_probability = 0.9
+    return (pickle.dumps(drift_detector) if dump else drift_detector,
             {"model": model,
              "model_id": model_id,
              "axon": axon,
              "warning_detected": warning_detected,
              "change_detected": change_detected,
-             "drift_probability": drift_probability}
+             "drift_probability": drift_probability
+             }
             )
 
 
@@ -191,10 +202,11 @@ def write_state_to_bq(rdd, state_table):
                 logger.error("New rows have been added.")
 
 
-def build_drift_detector(job_conf: dict, dim: int, gg: JavaGateway):
+def build_drift_detector(job_conf: dict, dim: int):
     drift_detector_type = job_conf['drift_detector_type']
     if drift_detector_type.startswith('MOA_'):
-        detector = MoaDetector(drift_detector_type, dim, gg)
+        gg = JavaGateway.launch_gateway(jarpath=job_conf['py4j_jar_path'], classpath=job_conf['moa_jar_path'])
+        detector = MoaDetector(drift_detector_type, job_conf, gg)
     elif drift_detector_type.startswith('SKMULTIFLOW_'):
         detector = MultiflowDetector(drift_detector_type, dim)
     else:

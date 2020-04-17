@@ -3,7 +3,7 @@ import json
 import numpy as np
 import requests
 
-DATA_SIZE = 2000
+DATA_SIZE = 2000000
 
 
 data_stream = np.ones((DATA_SIZE)) * 19
@@ -12,7 +12,7 @@ for i in range(999, 1500):
 
 # Port forward a model proxy:
 #  while True; do kubectl port-forward ml-test1-deployer-2990861116-proxy-689cd6dd59-7w9kk  8080:8000; done
-#  while True; do kubectl port-forward deploy/ml-test1-deployer-2865361340-proxy  8080:8000; done
+#  while True; do kubectl port-forward deploy/ml-test2-deployer-2409019784-proxy  8080:8000; done
 url = "http://localhost:8080/predict"
 for i in range(DATA_SIZE):
     x = int(data_stream[i])

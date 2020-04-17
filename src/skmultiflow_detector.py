@@ -32,13 +32,13 @@ class MultiflowDetector:
 
 
 def skmultiflow_detector(drift_detector_type: str) -> BaseDriftDetector:
-    if drift_detector_type == "EDDM":
+    if drift_detector_type == "SKMULTIFLOW_EDDM":
         multiflow_detector = EDDM()
-    elif drift_detector_type == "PageHinkley":
+    elif drift_detector_type == "SKMULTIFLOW_PageHinkley":
         multiflow_detector = PageHinkley()
-    elif drift_detector_type == "DDM":
+    elif drift_detector_type == "SKMULTIFLOW_DDM":
         multiflow_detector = DDM()
-    elif drift_detector_type == "ADWIN":
+    elif drift_detector_type == "SKMULTIFLOW_ADWIN":
         multiflow_detector = ADWIN()
     else:
         raise Exception("Drift detector %s not implemented" % drift_detector_type)
