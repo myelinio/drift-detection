@@ -48,7 +48,7 @@ def parse_request(l_tuple):
                 is_proxy = istio_labels["app"].endswith("-proxy")
                 is_predict = parsed_body[":path"] == "/predict"
                 if is_predict and is_proxy:
-                    model_id = istio_labels["deployers.myelinproj.io/deployer"]
+                    model_id = istio_labels["deployers.myelin.io/deployer"]
                     model = istio_labels["stable-app"]
                     axon = istio_labels["axon"]
                     lines.append((model_id,
